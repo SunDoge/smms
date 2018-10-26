@@ -15,7 +15,8 @@ use glob::glob;
 fn main() {
     let matches = App::new("smms cli").version(crate_version!()).author(crate_authors!()).about("do something").arg(Arg::with_name("filename").long("file").short("f")).arg(Arg::with_name("delete").long("delete").short("d")).get_matches();
 
-    tokio::run_async(async {
-        await!(history()).unwrap()
+    let smms_client = smms::SmmsClient::new();
+    tokio::run_async(async move {
+        await!(smms_client.list()).unwrap()
     });
 }
