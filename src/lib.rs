@@ -8,10 +8,68 @@ extern crate serde_derive;
 
 pub mod api;
 
-use reqwest::r#async::{Client, Decoder};
+use reqwest::r#async::{Client as AsyncClient, Decoder};
+use reqwest::StatusCode;
 use std::io::{self, Cursor};
 use std::mem;
 use tokio::prelude::*;
+use std::error;
+use std::fmt;
+
+#[derive(Debug)]
+pub enum Error {
+    Reqwest(reqwest::Error),
+    Msg(String),
+    Pattern(glob::PatternError),
+    Glob(glob::GlobError),
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        match *self {
+            Error::Reqwest(ref e) =>  e.description(),
+            Error::Msg(ref s) => s,
+            Error::Pattern(ref e) => e.description(),
+            Error::Glob(ref e) => e.description(),
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Error::Reqwest(ref e) => e.fmt(f),
+            Error::Msg(ref s) => f.write_str(s),
+            Error::Glob(ref e) => e.fmt(f),
+            Error::Pattern(ref e) => e.fmt(f),
+        } 
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Error {
+        Error::Reqwest(err)
+    }
+}
+
+impl From<String> for Error {
+    fn from(err: String) -> Error {
+        Error::Msg(err)
+    }
+}
+
+impl From<glob::PatternError> for Error {
+    fn from(err: glob::PatternError) -> Error {
+        Error::Pattern(err)
+    }
+}
+
+impl From<glob::GlobError> for Error {
+    fn from(err: glob::GlobError) -> Error {
+        Error::Glob(err)
+    }
+}
+
 
 #[derive(Debug, Deserialize)]
 pub struct Data {
@@ -27,75 +85,42 @@ pub struct Data {
     delete: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct History {
-    code: String,
-    data: Vec<Data>,
+pub struct Client {
+    client: AsyncClient,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Message {
-    code: String,
-    msg: String,
-}
-
-pub async fn history() -> Result<(), ()> {
-    // await!(Client::new()
-    //     .get(api::HISTORY)
-    //     .send()
-    //     .and_then(|mut res| {
-    //         println!("{}", res.status());
-
-    //         let body = mem::replace(res.body_mut(), Decoder::empty());
-    //         body.concat2()
-    //     })
-    //     .map_err(|err| println!("request error: {}", err))
-    //     .map(|body| {
-    //         let mut body = Cursor::new(body);
-    //         let _ = io::copy(&mut body, &mut io::stdout()).map_err(|err| {
-    //             println!("stdout error: {}", err);
-    //         });
-    //     }))
-
-    let mut res = await!(Client::new().get(api::HISTORY).send())
-        .map_err(|err| println!("request error: {}", err))?;
-    println!("{}", res.status());
-    let body = mem::replace(res.body_mut(), Decoder::empty());
-    let body = await!(body.concat2()).map_err(|err| println!("concat2 error: {}", err))?;
-    let mut body = Cursor::new(body);
-    let _ = io::copy(&mut body, &mut io::stdout()).map_err(|err| {
-        println!("stdout error: {}", err);
-    });
-
-    Ok(())
-}
-
-pub async fn upload(filename: &str) -> Result<(), ()> {
-    unimplemented!()
-}
-
-pub struct SmmsClient {
-    client: Client,
-}
-
-impl SmmsClient {
-    pub fn new() -> SmmsClient {
-        SmmsClient {
-            client: Client::new(),
+impl Client {
+    pub fn new() -> Client {
+        Client {
+            client: AsyncClient::new(),
         }
     }
 
-    pub async fn list(&self) -> Result<(), ()> {
-        let mut res = await!(self.client.get(api::HISTORY).send())
-        .map_err(|err| println!("request error: {}", err))?;
-        println!("{}", res.status());
-        let body = mem::replace(res.body_mut(), Decoder::empty());
-        let body = await!(body.concat2()).map_err(|err| println!("concat2 error: {}", err))?;
-        let mut body = Cursor::new(body);
-        let _ = io::copy(&mut body, &mut io::stdout()).map_err(|err| {
-            println!("stdout error: {}", err);
-        });
+    pub async fn list(&self) -> Result<Vec<Data>, Error> {
+        let mut res = await!(self.client.get(api::LIST).send())?;
+        // println!("{}", res.status());
+        // let body = mem::replace(res.body_mut(), Decoder::empty());
+        // let body = await!(body.concat2()).map_err(|err| println!("concat2 error: {}", err))?;
+        // let mut body = Cursor::new(body);
+        // let _ = io::copy(&mut body, &mut io::stdout()).map_err(|err| {
+        //     println!("stdout error: {}", err);
+        // });
+        if res.status() == StatusCode::OK {
+            let data = await!(res.json::<Vec<Data>>())?;
+            Ok(data)
+        } else {
+            Err(Error::Msg(format!("{}", res.status())))
+        }
+    }
 
-        Ok(())
+    pub async fn upload<'a>(&'a self, pattern: &'a str) -> Result<Vec<Data>, Error> {
+        for entry in glob::glob(pattern)? {
+            match entry {
+                Ok(path) => println!("{:?}", path.display()),
+                Err(e) => println!("{:?}", e),
+            }
+        }  
+
+        Ok(Vec::new())
     }
 }
