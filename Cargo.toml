@@ -11,5 +11,6 @@ tokio-async-await = "0.1.4"
 tokio = { version = "0.1.11", features = ["async-await-preview"] }
 serde = "1.0"
 serde_json = "1.0"
+serde_derive = "1.0"
 clap = "2.32"
 glob = "0.2"
