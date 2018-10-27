@@ -6,15 +6,21 @@ extern crate tokio;
 #[macro_use]
 extern crate serde_derive;
 
+
+#[macro_use]
+extern crate serde_json;
+
 pub mod api;
 
-use reqwest::r#async::{Client as AsyncClient, Decoder};
+use reqwest::r#async::{Client as AsyncReqwestClient, Decoder};
+use reqwest::{Client as ReqwestClient, multipart::Form};
 use reqwest::StatusCode;
 use std::io::{self, Cursor};
 use std::mem;
 use tokio::prelude::*;
 use std::error;
 use std::fmt;
+use serde_json::Value;
 
 #[derive(Debug)]
 pub enum Error {
@@ -85,14 +91,14 @@ pub struct Data {
     delete: String,
 }
 
-pub struct Client {
-    client: AsyncClient,
+pub struct AsyncClient {
+    client: AsyncReqwestClient,
 }
 
-impl Client {
-    pub fn new() -> Client {
-        Client {
-            client: AsyncClient::new(),
+impl AsyncClient {
+    pub fn new() -> AsyncClient {
+        AsyncClient {
+            client: AsyncReqwestClient::new(),
         }
     }
 
@@ -122,5 +128,82 @@ impl Client {
         }  
 
         Ok(Vec::new())
+    }
+}
+
+
+pub struct Client {
+    client: ReqwestClient,
+}
+
+impl Client {
+    pub fn new() -> Client {
+        Client {
+            client: ReqwestClient::new(),
+        }
+    }
+
+    pub fn list(&self) -> Result<Vec<Data>, Error> {
+        let mut res = self.client.get(api::LIST).send()?;
+
+        if res.status() ==  StatusCode::OK {
+            let mut json_res: Value = res.json()?;
+            if json_res["code"] == json!("success") {
+                let data: Vec<Data> = serde_json::from_value(json_res["data"].take()).unwrap();
+                Ok(data)
+            } else {
+                let msg = serde_json::from_value(json_res["msg"].take()).unwrap();
+                Err(Error::Msg(msg))
+            }
+        } else {
+            Err(Error::Msg(format!("{}", res.status())))
+        }
+    }
+
+    pub fn upload(&self, pattern: &str) -> Result<Vec<Data>, Error> {
+        let mut result = Vec::new();
+
+        for entry in glob::glob(pattern)? {
+            match entry {
+                Ok(path) => {
+                    println!("{}", path.display());
+                    let form = Form::new().file("smfile", path).unwrap();
+                    let mut res = self.client.post(api::UPLOAD).multipart(form).send()?;
+                    if res.status().is_success() {
+                        let mut json_res: Value = res.json()?;
+                        if json_res["code"] == json!("success") {
+                            let data: Data = serde_json::from_value(json_res["data"].take()).unwrap();
+                            result.push(data);
+                        } else {
+                            println!("{}", json_res);
+                        }
+                    }
+                }
+                Err(e) => println!("{:?}", e),
+            }
+        }  
+
+       
+
+        Ok(result)
+    }
+
+    pub fn delete(&self, hash: &str) -> Result<(), Error> {
+        println!("hash {}", hash);
+        let mut res = self.client.get(&format!("{}/{}", api::DELETE, hash)).query(&[("format", "json")]).send()?;
+
+        if res.status().is_success() {
+            let json_res: Value = res.json()?;
+
+            if json_res["code"] == json!("success") {
+                
+            } else {
+
+            }
+
+            println!("{}", json_res);
+        }
+
+        Ok(())
     }
 }
