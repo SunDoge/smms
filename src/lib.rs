@@ -206,4 +206,22 @@ impl Client {
 
         Ok(())
     }
+
+    pub fn clear(&self) -> Result<(), Error> {
+        let mut res = self.client.get(api::CLEAR).query(&[("format", "json")]).send()?;
+
+        if res.status().is_success() {
+            let json_res: Value = res.json()?;
+
+            if json_res["code"] == json!("success") {
+                
+            } else {
+
+            }
+
+            println!("{}", json_res);
+        }
+
+        Ok(())
+    }
 }
